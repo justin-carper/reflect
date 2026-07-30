@@ -1,0 +1,36 @@
+{
+  "name": "reflect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Find the sessions where you corrected your coding agent, and turn them into rules that bind.",
+  "type": "module",
+  "bin": {
+    "reflect": "src/cli.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "files": [
+    "src",
+    "prompts",
+    "integrations",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justin-carper/reflect.git"
+  },
+  "keywords": [
+    "agents",
+    "agent-rules",
+    "opencode",
+    "claude-code",
+    "agents-md"
+  ]
+}

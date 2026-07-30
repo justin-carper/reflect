@@ -1,0 +1,14 @@
+# Never commit a corpus, a report, or nudge state. They contain verbatim text
+# you typed in real sessions, including anything you pasted from private repos.
+# Default output already lands outside this repo; these are belt-and-braces for
+# anyone who points --out or --state-dir here.
+corpus.md
+*.corpus.md
+reports/
+state.json
+nudge.log
+
+node_modules/
+.DS_Store
+.env
+.env.*
