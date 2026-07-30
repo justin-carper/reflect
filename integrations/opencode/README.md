@@ -2,6 +2,14 @@
 
 Three files, two of them optional.
 
+The installer does all of it:
+
+```sh
+./install.sh --harness opencode --with-nudge
+```
+
+Drop `--with-nudge` to skip the plugin. The rest of this page is what the installer does, for anyone who'd rather do it by hand or wants to know what changed.
+
 ## 1. The command (required)
 
 ```sh

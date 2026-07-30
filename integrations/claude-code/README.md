@@ -1,11 +1,17 @@
 # Claude Code integration
 
 ```sh
+./install.sh --harness claude-code
+```
+
+Or by hand, which is all the installer does here:
+
+```sh
 mkdir -p ~/.claude/commands
 cp integrations/claude-code/commands/reflect.md ~/.claude/commands/
 ```
 
-Gives you `/reflect`.
+Either way you get `/reflect`.
 
 There is no nudge plugin here. Claude Code's hook system could support one, but the value is low enough that a periodic manual run is the honest recommendation — reflection yield is front-loaded, so running it more often does not find proportionally more.
 

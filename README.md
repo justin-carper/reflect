@@ -50,39 +50,62 @@ That shape — a rule you already wrote, ignored, plus the reason it didn't stic
 
 Needs Node 18 or newer. No dependencies to install.
 
-**1. Get it, and check what it can see.**
+**1. Get it and install it.**
 
 ```sh
 git clone https://github.com/justin-carper/reflect.git
 cd reflect
-node src/cli.mjs doctor
+./install.sh
 ```
 
-`doctor` prints your state directory, one line per harness — `found` or `absent`, with the path it looked in — and the watermark from your last run, which is unset the first time and explained in step 4. Nothing is analyzed yet.
+The installer symlinks `reflect` into `~/.local/bin` and copies the `/reflect` command into whichever harnesses it finds. It tells you if `~/.local/bin` isn't on your `PATH`, and it doesn't edit your shell profile for you.
 
-**2. Build the corpus.**
+Re-running it is safe. Files that already match are left alone, and anything you've edited yourself is reported and skipped rather than overwritten. `./install.sh --help` lists the options; `--dry-run` shows what it would do.
+
+Skipping the installer is fine too — every command below works as `node src/cli.mjs <command>` from the clone.
+
+**2. Check what it can see.**
 
 ```sh
-node src/cli.mjs build
+reflect doctor
+```
+
+Prints your state directory, one line per harness — `found` or `absent`, with the path it looked in — and the watermark from your last run, which is unset the first time and explained in step 5. Nothing is analyzed yet.
+
+**3. Build the corpus.**
+
+```sh
+reflect build
 ```
 
 Prints where it wrote the corpus, how many sessions qualified out of how many it considered, the message count, the size in tokens, what it discarded as duplicated, and how many repos are represented. If one repo dominates, you get a warning — pay attention to it, because a habit that only shows up in one repo is that repo's convention rather than a preference of yours. [Why that matters](./docs/why-it-works.md#your-history-is-more-lopsided-than-you-think).
 
-**3. Hand the prompt to your agent.**
+**4. Hand the prompt to your agent.**
 
 ```sh
-node src/cli.mjs prompt
+reflect prompt
 ```
 
-Paste the output into your agent. It reads the corpus, reads your existing rules files, and writes the report. If you'd rather have a slash command than a copy-paste, see [`integrations/`](./integrations).
+Paste the output into your agent. It reads the corpus, reads your existing rules files, and writes the report. If the installer set up your harness, `/reflect` does all of this for you — see [`integrations/`](./integrations).
 
-**4. Once you've acted on the findings, set the watermark.**
+**5. Once you've acted on the findings, set the watermark.**
 
 ```sh
-node src/cli.mjs mark-reflected
+reflect mark-reflected
 ```
 
 The **watermark** is a timestamp saved in your state directory. After it's set, `build` only looks at sessions newer than it, so the next run won't re-analyze what you already dealt with. Pass `--all` when you want full history anyway.
+
+## Updating
+
+```sh
+cd reflect
+./install.sh --update
+```
+
+That pulls the repo and re-syncs the harness files in one step. The CLI is a symlink into your clone, so it's current the moment the pull finishes.
+
+The installer remembers what it wrote. A harness file it installed and you never touched gets updated silently; one you edited is skipped and reported, so an update can't quietly revert your changes. `--force` overrides that if you want the repo's version back.
 
 ## What to do with a report
 
@@ -139,6 +162,16 @@ reflect build [options]     write the corpus, print stats
 reflect count [options]     qualifying session count only
 reflect prompt [options]    print the analysis prompt
 reflect mark-reflected      stamp the watermark at now
+```
+
+```
+./install.sh                install for every detected harness
+./install.sh --update       git pull, then re-sync the harness files
+./install.sh --force        overwrite harness files you have modified
+./install.sh --harness N    limit to opencode or claude-code
+./install.sh --with-nudge   also install the optional opencode nudge plugin
+./install.sh --dry-run      print every action, change nothing
+./install.sh --uninstall    remove the symlink and any unmodified file
 ```
 
 | Option | Meaning |
