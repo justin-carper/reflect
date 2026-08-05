@@ -2,7 +2,7 @@
 
 An adapter converts one harness's on-disk session history into normalized sessions. Everything downstream — signal gating, deduplication, statistics, markdown emission, the analysis prompt — is shared and already written.
 
-Look at [`opencode.mjs`](./opencode.mjs) and [`claude-code.mjs`](./claude-code.mjs). They are ~110 and ~140 lines including comments.
+Look at [`opencode.mjs`](./opencode.mjs) and [`claude-code.mjs`](./claude-code.mjs). They are ~200 and ~140 lines including comments.
 
 ## Contract
 
@@ -53,7 +53,8 @@ Two real examples of how much:
 | Harness | Marker | Share removed |
 |---|---|---|
 | opencode | `part.synthetic === true` | 27% of user text parts |
-| opencode | `session.parentID` present | 55% of all sessions |
+| opencode | `session.parent_id` present | 55% of all sessions |
+| opencode | `<pty_exited>` text prefix | the one envelope carrying *no* marker |
 | Claude Code | `toolUseResult` present | 59% of user records |
 | Claude Code | `isMeta`, `sourceToolUseID`, `isSidechain` | remainder |
 

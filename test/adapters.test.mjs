@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { DatabaseSync } from 'node:sqlite'
 
 import * as opencode from '../src/adapters/opencode.mjs'
 import * as claudeCode from '../src/adapters/claude-code.mjs'
@@ -22,60 +23,84 @@ const write = (file, obj) => {
 
 // ---------------------------------------------------------------- opencode
 
+// opencode stores sessions in SQLite. The fixture builds a real database so the
+// adapter's SQL is exercised, not a stand-in for it.
 function opencodeFixture() {
-  const S = path.join(tmp('oc'), 'storage')
+  const file = path.join(tmp('oc'), 'opencode.db')
+  const db = new DatabaseSync(file)
 
-  write(path.join(S, 'project/p1.json'), { id: 'p1', worktree: '/repo/main', vcs: 'git' })
+  db.exec(`
+    CREATE TABLE project (id text PRIMARY KEY, worktree text NOT NULL, vcs text);
+    CREATE TABLE session (
+      id text PRIMARY KEY, project_id text NOT NULL, parent_id text,
+      directory text NOT NULL, title text NOT NULL,
+      time_created integer NOT NULL, time_updated integer NOT NULL
+    );
+    CREATE TABLE message (
+      id text PRIMARY KEY, session_id text NOT NULL,
+      time_created integer NOT NULL, data text NOT NULL
+    );
+    CREATE TABLE part (
+      id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL,
+      data text NOT NULL
+    );
+  `)
+
+  const project = db.prepare('INSERT INTO project VALUES (?,?,?)')
+  const session = db.prepare('INSERT INTO session VALUES (?,?,?,?,?,?,?)')
+  const message = db.prepare('INSERT INTO message VALUES (?,?,?,?)')
+  const part = db.prepare('INSERT INTO part VALUES (?,?,?,?)')
+  const msg = (id, session_id, at, role) =>
+    message.run(id, session_id, at, JSON.stringify({ role, time: { created: at } }))
+  const txt = (id, message_id, session_id, data) =>
+    part.run(id, message_id, session_id, JSON.stringify(data))
+
+  project.run('p1', '/repo/main', 'git')
 
   // top-level session, living in a worktree of p1
-  write(path.join(S, 'session/x/s1.json'), {
-    id: 's1',
-    projectID: 'p1',
-    directory: '/repo/worktrees/featureA',
-    title: 'Fix the thing',
-    time: { created: 1000 },
-  })
+  session.run('s1', 'p1', null, '/repo/worktrees/featureA', 'Fix the thing', 1000, 1400)
   // subagent session — must be excluded entirely
-  write(path.join(S, 'session/x/s2.json'), {
-    id: 's2',
-    parentID: 's1',
-    projectID: 'p1',
-    directory: '/repo/main',
-    title: 'subagent',
-    time: { created: 1005 },
-  })
+  session.run('s2', 'p1', 's1', '/repo/main', 'subagent', 1005, 1010)
 
-  // human message with one real part and two that must be filtered
-  write(path.join(S, 'message/s1/m1.json'), { id: 'm1', role: 'user', time: { created: 1100 } })
-  write(path.join(S, 'part/m1/a.json'), { type: 'text', text: 'no, do not use that package' })
-  write(path.join(S, 'part/m1/b.json'), { type: 'text', synthetic: true, text: 'INJECTED SKILL TEXT' })
-  write(path.join(S, 'part/m1/c.json'), { type: 'text', ignored: true, text: 'IGNORED PART' })
-  write(path.join(S, 'part/m1/d.json'), { type: 'file', filename: 'x.png' })
+  // human message with one real part and three that must be filtered
+  msg('m1', 's1', 1100, 'user')
+  txt('m1a', 'm1', 's1', { type: 'text', text: 'no, do not use that package' })
+  txt('m1b', 'm1', 's1', { type: 'text', synthetic: true, text: 'INJECTED SKILL TEXT' })
+  txt('m1c', 'm1', 's1', { type: 'text', ignored: true, text: 'IGNORED PART' })
+  txt('m1d', 'm1', 's1', { type: 'file', filename: 'x.png' })
 
   // slash-command expansion: wrapper must be stripped, tail kept
-  write(path.join(S, 'message/s1/m2.json'), { id: 'm2', role: 'user', time: { created: 1200 } })
-  write(path.join(S, 'part/m2/a.json'), {
+  msg('m2', 's1', 1200, 'user')
+  txt('m2a', 'm2', 's1', {
     type: 'text',
     text:
       'The user input can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).\n\nUser input:\n\nyou keep editing the generated file',
   })
 
   // assistant message must be ignored
-  write(path.join(S, 'message/s1/m3.json'), { id: 'm3', role: 'assistant', time: { created: 1300 } })
-  write(path.join(S, 'part/m3/a.json'), { type: 'text', text: 'assistant reply' })
+  msg('m3', 's1', 1300, 'assistant')
+  txt('m3a', 'm3', 's1', { type: 'text', text: 'assistant reply' })
+
+  // pty plugin notice: arrives under the user role and is NOT flagged synthetic
+  msg('m5', 's1', 1350, 'user')
+  txt('m5a', 'm5', 's1', {
+    type: 'text',
+    text: '<pty_exited>\nID: pty_abc\nExit Code: 0\nPTY NOTICE BODY',
+  })
 
   // subagent session messages exist but must never be read
-  write(path.join(S, 'message/s2/m9.json'), { id: 'm9', role: 'user', time: { created: 1010 } })
-  write(path.join(S, 'part/m9/a.json'), { type: 'text', text: 'AGENT AUTHORED PROMPT' })
+  msg('m9', 's2', 1010, 'user')
+  txt('m9a', 'm9', 's2', { type: 'text', text: 'AGENT AUTHORED PROMPT' })
 
-  // malformed file must not throw
-  write(path.join(S, 'message/s1/m4.json'), '{ this is not json')
+  // malformed part payload must not throw
+  part.run('m4a', 'm1', 's1', '{ this is not json')
 
-  return S
+  db.close()
+  return file
 }
 
-test('opencode adapter: filters injected, ignored, assistant, and subagent content', () => {
-  process.env.REFLECT_OPENCODE_STORAGE = opencodeFixture()
+test('opencode adapter: filters injected, ignored, assistant, pty, and subagent content', () => {
+  process.env.REFLECT_OPENCODE_DB = opencodeFixture()
   assert.equal(opencode.detect(), true)
 
   const sessions = opencode.load({ since: 0 })
@@ -90,28 +115,101 @@ test('opencode adapter: filters injected, ignored, assistant, and subagent conte
   assert.equal(texts[1], 'you keep editing the generated file', 'command wrapper is stripped')
 
   const joined = texts.join('\n')
-  for (const forbidden of ['INJECTED SKILL TEXT', 'IGNORED PART', 'assistant reply', 'AGENT AUTHORED PROMPT']) {
+  for (const forbidden of [
+    'INJECTED SKILL TEXT',
+    'IGNORED PART',
+    'assistant reply',
+    'AGENT AUTHORED PROMPT',
+    'PTY NOTICE BODY',
+  ]) {
     assert.ok(!joined.includes(forbidden), `must exclude: ${forbidden}`)
   }
 })
 
 test('opencode adapter: repo collapses worktrees to the canonical root', () => {
-  process.env.REFLECT_OPENCODE_STORAGE = opencodeFixture()
+  process.env.REFLECT_OPENCODE_DB = opencodeFixture()
   const [s] = opencode.load({ since: 0 })
   assert.equal(s.project, '/repo/worktrees/featureA')
   assert.equal(s.repo, '/repo/main', 'worktree maps to the project worktree, not its own path')
 })
 
 test('opencode adapter: since filter excludes older sessions', () => {
-  process.env.REFLECT_OPENCODE_STORAGE = opencodeFixture()
+  process.env.REFLECT_OPENCODE_DB = opencodeFixture()
   assert.equal(opencode.load({ since: 5000 }).length, 0)
   assert.equal(opencode.load({ since: 1150 }).length, 1, 'newest message after watermark keeps it')
 })
 
-test('opencode adapter: detect fails closed when storage is absent', () => {
-  process.env.REFLECT_OPENCODE_STORAGE = path.join(tmp('oc-empty'), 'nope')
+test('opencode adapter: a session is dropped when every post-watermark part is filtered', () => {
+  // m5 (the pty notice) is the only message after 1300, and it does not survive
+  // filtering — so the session must not be pulled in on its account.
+  process.env.REFLECT_OPENCODE_DB = opencodeFixture()
+  assert.deepEqual(opencode.load({ since: 1300 }), [])
+})
+
+test('opencode adapter: detect fails closed when the database is absent', () => {
+  process.env.REFLECT_OPENCODE_DB = path.join(tmp('oc-empty'), 'nope.db')
   assert.equal(opencode.detect(), false)
   assert.deepEqual(opencode.load({ since: 0 }), [])
+})
+
+test('opencode adapter: detect fails closed on an abandoned store, not just a missing one', () => {
+  // The regression this guards: opencode leaves its pre-2026-02 JSON tree on disk
+  // after migrating, and an empty-but-present store must not read as healthy.
+  // Full schema, zero rows — what a store looks like once its data lives elsewhere.
+  const file = path.join(tmp('oc-dead'), 'opencode.db')
+  const db = new DatabaseSync(file)
+  db.exec(`
+    CREATE TABLE project (id text PRIMARY KEY, worktree text NOT NULL, vcs text);
+    CREATE TABLE session (
+      id text PRIMARY KEY, project_id text NOT NULL, parent_id text,
+      directory text NOT NULL, title text NOT NULL,
+      time_created integer NOT NULL, time_updated integer NOT NULL
+    );
+    CREATE TABLE message (
+      id text PRIMARY KEY, session_id text NOT NULL,
+      time_created integer NOT NULL, data text NOT NULL
+    );
+    CREATE TABLE part (
+      id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL,
+      data text NOT NULL
+    );
+  `)
+  db.close()
+
+  process.env.REFLECT_OPENCODE_DB = file
+  assert.equal(opencode.detect(), false, 'a store with no sessions is not a live store')
+  assert.equal(opencode.describe().present, false)
+  assert.deepEqual(opencode.load({ since: 0 }), [])
+})
+
+test('opencode adapter: describe reports last activity so a dead store is visible', () => {
+  process.env.REFLECT_OPENCODE_DB = opencodeFixture()
+  const info = opencode.describe()
+  assert.equal(info.present, true)
+  assert.equal(info.topLevelSessions, 1, 'subagent sessions are not counted')
+  assert.equal(info.lastActivity, new Date(1400).toISOString())
+})
+
+test('opencode adapter: a database that is not an opencode store is not detected', () => {
+  const file = path.join(tmp('oc-wrong'), 'other.db')
+  const db = new DatabaseSync(file)
+  db.exec('CREATE TABLE unrelated (x integer); INSERT INTO unrelated VALUES (1)')
+  db.close()
+
+  process.env.REFLECT_OPENCODE_DB = file
+  assert.equal(opencode.detect(), false)
+  assert.equal(opencode.describe().present, false)
+  // The CLI only calls load() on a detected harness. If something does reach it
+  // with the wrong schema, that must surface rather than read as an empty corpus.
+  assert.throws(() => opencode.load({ since: 0 }))
+})
+
+test('opencode adapter: a malformed part payload is skipped, not fatal', () => {
+  // json_extract aborts the whole statement on an invalid payload, so the fixture
+  // carries one and the surviving messages must still come back.
+  process.env.REFLECT_OPENCODE_DB = opencodeFixture()
+  const [s] = opencode.load({ since: 0 })
+  assert.equal(s.messages.length, 2)
 })
 
 // ------------------------------------------------------------- claude code

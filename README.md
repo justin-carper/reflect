@@ -48,7 +48,7 @@ That shape — a rule you already wrote, ignored, plus the reason it didn't stic
 
 ## Run it
 
-Needs Node 18 or newer. No dependencies to install.
+Needs Node 18 or newer. No dependencies to install. Reading opencode history additionally needs Node 22.5 or newer, because opencode keeps its sessions in SQLite and the reader uses the built-in `node:sqlite`; `reflect doctor` says so if your runtime is older. Claude Code history has no such requirement.
 
 **1. Get it and install it.**
 
@@ -188,7 +188,7 @@ reflect mark-reflected      stamp the watermark at now
 | Environment | Purpose |
 |---|---|
 | `REFLECT_STATE_DIR` | state directory |
-| `REFLECT_OPENCODE_STORAGE` | opencode storage root |
+| `REFLECT_OPENCODE_DB` | opencode session database (`opencode.db`) |
 | `REFLECT_CLAUDE_PROJECTS` | Claude Code projects root |
 
 The state directory defaults to `$XDG_STATE_HOME/reflect`, or `~/.local/state/reflect` if that isn't set, or `%LOCALAPPDATA%\reflect` on Windows.

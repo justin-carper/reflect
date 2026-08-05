@@ -96,7 +96,7 @@ Options:
 
 Environment:
   REFLECT_STATE_DIR             override state directory
-  REFLECT_OPENCODE_STORAGE     override opencode storage root
+  REFLECT_OPENCODE_DB           override opencode session database path
   REFLECT_CLAUDE_PROJECTS      override Claude Code projects root
 `
 
