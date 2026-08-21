@@ -11,6 +11,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import * as opencode from '../src/adapters/opencode.mjs'
 import * as claudeCode from '../src/adapters/claude-code.mjs'
+import * as pi from '../src/adapters/pi.mjs'
 import { build } from '../src/corpus.mjs'
 import { signalCounts } from '../src/lexicon.mjs'
 import { dropRepeats, dropNearDuplicateSessions } from '../src/dedupe.mjs'
@@ -292,6 +293,140 @@ test('claude-code adapter: detect fails closed when projects dir is absent', () 
   process.env.REFLECT_CLAUDE_PROJECTS = path.join(tmp('cc-empty'), 'nope')
   assert.equal(claudeCode.detect(), false)
   assert.deepEqual(claudeCode.load({ since: 0 }), [])
+})
+
+// --------------------------------------------------------------------- pi
+
+function piFixture() {
+  const root = path.join(tmp('pi'), 'sessions')
+  const dir = path.join(root, '--repo-main--')
+  const iso = (s) => new Date(s).toISOString()
+  const ms = (s) => Date.parse(s)
+  const lines = [
+    { type: 'session', version: 3, id: 'pi1', timestamp: iso('2026-01-01T00:00:00Z'), cwd: '/repo/main' },
+    { type: 'model_change', id: 'e01', parentId: null, timestamp: iso('2026-01-01T00:00:00.5Z'), provider: 'p', modelId: 'm' },
+    // human message: one text block plus an image block that must be dropped
+    {
+      type: 'message', id: 'e02', parentId: 'e01', timestamp: iso('2026-01-01T00:00:01Z'),
+      message: {
+        role: 'user', timestamp: ms('2026-01-01T00:00:01Z'),
+        content: [
+          { type: 'text', text: 'no, that is not the pattern' },
+          { type: 'image', data: 'x', mimeType: 'image/png' },
+        ],
+      },
+    },
+    { type: 'message', id: 'e03', parentId: 'e02', timestamp: iso('2026-01-01T00:00:02Z'), message: { role: 'assistant', content: [{ type: 'text', text: 'ASSISTANT REPLY' }] } },
+    { type: 'message', id: 'e04', parentId: 'e03', timestamp: iso('2026-01-01T00:00:02Z'), message: { role: 'toolResult', toolCallId: 't1', toolName: 'bash', content: [{ type: 'text', text: 'TOOL RESULT' }], isError: false } },
+    { type: 'message', id: 'e05', parentId: 'e04', timestamp: iso('2026-01-01T00:00:02Z'), message: { role: 'bashExecution', command: 'ls', output: 'BASH OUTPUT', exitCode: 0, cancelled: false, truncated: false } },
+    { type: 'custom_message', id: 'e06', parentId: 'e05', timestamp: iso('2026-01-01T00:00:02Z'), customType: 'some-ext', content: 'INJECTED EXTENSION TEXT', display: true },
+    { type: 'compaction', id: 'e07', parentId: 'e06', timestamp: iso('2026-01-01T00:00:02Z'), summary: 'SUMMARY', tokensBefore: 100, retainedTail: [{ role: 'user', content: 'COMPACTION RETAINED' }] },
+    // /skill:x expansion: envelope stripped, typed arguments kept
+    {
+      type: 'message', id: 'e08', parentId: 'e07', timestamp: iso('2026-01-01T00:00:03Z'),
+      message: {
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: '<skill name="x" location="/skills/x/SKILL.md">\nReferences are relative to /skills/x.\n\nSKILL BODY\n</skill>\n\nyou keep editing the generated file',
+        }],
+      },
+    },
+    // /skill:y expansion with no arguments: nothing typed, so nothing survives.
+    // Timestamp is after e08 so the since-filter test below can isolate it.
+    {
+      type: 'message', id: 'e09', parentId: 'e08', timestamp: iso('2026-01-01T00:00:05Z'),
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: '<skill name="y" location="/skills/y/SKILL.md">\nSKILL BODY ONLY\n</skill>' }],
+      },
+    },
+    { type: 'session_info', id: 'e10', parentId: 'e09', timestamp: iso('2026-01-01T00:00:06Z'), name: 'Fix the thing' },
+    'not json at all',
+    'null',
+    '',
+  ]
+  write(
+    path.join(dir, '2026-01-01T00-00-00-000Z_pi1.jsonl'),
+    lines.map((l) => (typeof l === 'string' ? l : JSON.stringify(l))).join('\n'),
+  )
+
+  // Subagent sessions nest under the parent session file's basename. The walk
+  // must never read them: their "user" text is a prompt the parent agent wrote.
+  write(
+    path.join(dir, '2026-01-01T00-00-00-000Z_pi1', 'tasks', 'sub.jsonl'),
+    [
+      { type: 'session', version: 3, id: 'sub1', timestamp: iso('2026-01-01T00:00:02Z'), cwd: '/repo/main', parentSession: path.join(dir, '2026-01-01T00-00-00-000Z_pi1.jsonl') },
+      { type: 'message', id: 's01', parentId: null, timestamp: iso('2026-01-01T00:00:02Z'), message: { role: 'user', content: [{ type: 'text', text: 'AGENT AUTHORED PROMPT' }] } },
+    ].map((l) => JSON.stringify(l)).join('\n'),
+  )
+  return root
+}
+
+test('pi adapter: filters non-human content, strips skill envelopes, skips nested subagent files', () => {
+  process.env.REFLECT_PI_SESSIONS = piFixture()
+  assert.equal(pi.detect(), true)
+
+  const sessions = pi.load({ since: 0 })
+  assert.equal(sessions.length, 1, 'only the top-level session is returned')
+
+  const s = sessions[0]
+  assert.equal(s.id, 'pi1')
+  assert.equal(s.title, 'Fix the thing')
+  assert.equal(s.project, '/repo/main')
+  assert.equal(s.repo, '/repo/main')
+  assert.equal(s.messages.length, 2)
+  assert.deepEqual(
+    s.messages.map((m) => m.text),
+    ['no, that is not the pattern', 'you keep editing the generated file'],
+  )
+  assert.deepEqual(s.messages.map((m) => m.at), [Date.parse('2026-01-01T00:00:01Z'), Date.parse('2026-01-01T00:00:03Z')])
+
+  const joined = s.messages.map((m) => m.text).join('\n')
+  for (const forbidden of [
+    'ASSISTANT REPLY',
+    'TOOL RESULT',
+    'BASH OUTPUT',
+    'INJECTED EXTENSION TEXT',
+    'COMPACTION RETAINED',
+    'AGENT AUTHORED PROMPT',
+    'SKILL BODY',
+  ]) {
+    assert.ok(!joined.includes(forbidden), `must exclude: ${forbidden}`)
+  }
+})
+
+test('pi adapter: malformed lines do not throw', () => {
+  process.env.REFLECT_PI_SESSIONS = piFixture()
+  assert.doesNotThrow(() => pi.load({ since: 0 }))
+})
+
+test('pi adapter: since filter excludes sessions whose newest surviving message is older', () => {
+  process.env.REFLECT_PI_SESSIONS = piFixture()
+  assert.equal(pi.load({ since: Date.parse('2026-01-01T00:00:06Z') }).length, 0)
+  assert.equal(pi.load({ since: Date.parse('2026-01-01T00:00:01.5Z') }).length, 1)
+})
+
+test('pi adapter: a session is dropped when every post-watermark message is filtered', () => {
+  // e09 (skill envelope with no arguments) is the only message after 00:00:04Z,
+  // and it does not survive filtering — so the session must not be pulled in.
+  process.env.REFLECT_PI_SESSIONS = piFixture()
+  assert.deepEqual(pi.load({ since: Date.parse('2026-01-01T00:00:04Z') }), [])
+})
+
+test('pi adapter: detect fails closed when the sessions root is absent', () => {
+  process.env.REFLECT_PI_SESSIONS = path.join(tmp('pi-empty'), 'sessions')
+  assert.equal(pi.detect(), false)
+  assert.deepEqual(pi.load({ since: 0 }), [])
+  assert.equal(pi.describe().present, false)
+})
+
+test('pi adapter: describe counts top-level sessions only', () => {
+  process.env.REFLECT_PI_SESSIONS = piFixture()
+  const info = pi.describe()
+  assert.equal(info.present, true)
+  assert.equal(info.sessions, 1, 'the nested subagent file is not counted')
+  assert.ok(info.lastActivity)
 })
 
 // ------------------------------------------------------------------ shared

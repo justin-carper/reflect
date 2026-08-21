@@ -17,6 +17,7 @@ const fakeHome = (opts = {}) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'reflect-install-'))
   if (opts.opencode !== false) fs.mkdirSync(path.join(home, '.config/opencode'), { recursive: true })
   if (opts.claudeCode !== false) fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+  if (opts.pi !== false) fs.mkdirSync(path.join(home, '.pi/agent'), { recursive: true })
   return home
 }
 
@@ -43,6 +44,7 @@ const paths = (home) => ({
   ocAgent: path.join(home, '.config/opencode/agent/reflector.md'),
   ocPlugin: path.join(home, '.config/opencode/plugins/reflect-nudge.ts'),
   ccCommand: path.join(home, '.claude/commands/reflect.md'),
+  piPrompt: path.join(home, '.pi/agent/prompts/reflect.md'),
 })
 
 test('install: links the CLI and installs files for detected harnesses', () => {
@@ -55,6 +57,7 @@ test('install: links the CLI and installs files for detected harnesses', () => {
   assert.equal(fs.existsSync(p.ocCommand), true)
   assert.equal(fs.existsSync(p.ocAgent), true)
   assert.equal(fs.existsSync(p.ccCommand), true)
+  assert.equal(fs.existsSync(p.piPrompt), true)
 
   // The nudge plugin is opt-in; a plain install must not write it.
   assert.equal(fs.existsSync(p.ocPlugin), false)
@@ -72,6 +75,7 @@ test('install: installed files are byte-identical to the repo copies', () => {
     [p.ocCommand, 'integrations/opencode/commands/reflect.md'],
     [p.ocAgent, 'integrations/opencode/agent/reflector.md'],
     [p.ccCommand, 'integrations/claude-code/commands/reflect.md'],
+    [p.piPrompt, 'integrations/pi/prompts/reflect.md'],
   ]) {
     assert.equal(fs.readFileSync(dest, 'utf8'), fs.readFileSync(path.join(ROOT, src), 'utf8'))
   }
@@ -82,14 +86,14 @@ test('install: is idempotent — second run reports up to date and rewrites noth
   run(home)
   const p = paths(home)
 
-  const before = [p.ocCommand, p.ocAgent, p.ccCommand].map((f) => fs.statSync(f).mtimeMs)
+  const before = [p.ocCommand, p.ocAgent, p.ccCommand, p.piPrompt].map((f) => fs.statSync(f).mtimeMs)
   const out = run(home)
-  const after = [p.ocCommand, p.ocAgent, p.ccCommand].map((f) => fs.statSync(f).mtimeMs)
+  const after = [p.ocCommand, p.ocAgent, p.ccCommand, p.piPrompt].map((f) => fs.statSync(f).mtimeMs)
 
   assert.deepEqual(after, before, 'a re-run must not rewrite unchanged files')
   assert.match(out, /up to date/)
   assert.doesNotMatch(out, /installed {6}/)
-  assert.match(out, /0 installed, 0 updated, 4 up to date, 0 skipped/)
+  assert.match(out, /0 installed, 0 updated, 5 up to date, 0 skipped/)
 })
 
 test('install: a locally modified file is skipped, not clobbered', () => {
@@ -140,6 +144,7 @@ test('install: --harness limits the scope', () => {
 
   assert.equal(fs.existsSync(p.ccCommand), true)
   assert.equal(fs.existsSync(p.ocCommand), false)
+  assert.equal(fs.existsSync(p.piPrompt), false)
 })
 
 test('install: --with-nudge adds the plugin file and skips a satisfied dependency', () => {
@@ -161,7 +166,7 @@ test('install: --with-nudge reports the npm install it would run', () => {
 })
 
 test('install: no harness present still installs the CLI', () => {
-  const home = fakeHome({ opencode: false, claudeCode: false })
+  const home = fakeHome({ opencode: false, claudeCode: false, pi: false })
   const out = run(home)
 
   assert.equal(fs.lstatSync(paths(home).link).isSymbolicLink(), true)
@@ -193,6 +198,7 @@ test('uninstall: removes what it installed and keeps what you changed', () => {
   assert.equal(fs.existsSync(p.link), false)
   assert.equal(fs.existsSync(p.ocCommand), false)
   assert.equal(fs.existsSync(p.ccCommand), false)
+  assert.equal(fs.existsSync(p.piPrompt), false)
   assert.equal(fs.existsSync(p.ocPlugin), false)
   assert.equal(fs.readFileSync(p.ocAgent, 'utf8'), '# edited\n', 'an edited file must survive uninstall')
   assert.match(out, /kept/)

@@ -1,7 +1,8 @@
 import * as opencode from './opencode.mjs'
 import * as claudeCode from './claude-code.mjs'
+import * as pi from './pi.mjs'
 
-export const adapters = [opencode, claudeCode]
+export const adapters = [opencode, claudeCode, pi]
 
 export function byName(name) {
   const a = adapters.find((x) => x.name === name)
