@@ -10,7 +10,7 @@ Your coding agent stores every session on your disk. Months of you telling it wh
 
 Two terms used throughout:
 
-- **Harness** — the program that runs the model. Claude Code, opencode, and pi are harnesses. All three are supported.
+- **Harness** — the program that runs the model. Claude Code, opencode, pi, and omp are harnesses. All four are supported.
 - **Corpus** — the single file `reflect` builds. Just the messages you typed, from the sessions worth reading, in order.
 
 **It never calls a model.** No API keys, no provider setup, nothing to pay for. The analysis runs on whatever model you already use.
@@ -141,6 +141,7 @@ A session then qualifies if it contains at least two corrective messages, recogn
 | opencode | native adapter |
 | Claude Code | native adapter |
 | pi | native adapter |
+| omp | native adapter |
 | anything else | works via a ~80-line adapter, or a hand-assembled corpus |
 
 Adding one: [`src/adapters/INTERFACE.md`](./src/adapters/INTERFACE.md).
@@ -169,15 +170,15 @@ reflect mark-reflected      stamp the watermark at now
 ./install.sh                install for every detected harness
 ./install.sh --update       git pull, then re-sync the harness files
 ./install.sh --force        overwrite harness files you have modified
-./install.sh --harness N    limit to opencode, claude-code, or pi
 ./install.sh --with-nudge   also install the optional opencode nudge plugin
 ./install.sh --dry-run      print every action, change nothing
+./install.sh --harness N    limit to opencode, claude-code, pi, or omp
 ./install.sh --uninstall    remove the symlink and any unmodified file
 ```
 
 | Option | Meaning |
 |---|---|
-| `--harness NAME` | `opencode`, `claude-code`, or `pi`; default is every detected harness |
+| `--harness NAME` | `opencode`, `claude-code`, `pi`, or `omp`; default is every detected harness |
 | `--all` | ignore the watermark, use full history |
 | `--min-signal N` | corrective messages required per session (default 2) |
 | `--out PATH` | corpus destination (default `<state-dir>/corpus.md`) |
@@ -192,6 +193,7 @@ reflect mark-reflected      stamp the watermark at now
 | `REFLECT_OPENCODE_DB` | opencode session database (`opencode.db`) |
 | `REFLECT_CLAUDE_PROJECTS` | Claude Code projects root |
 | `REFLECT_PI_SESSIONS` | pi sessions root (`~/.pi/agent/sessions`) |
+| `REFLECT_OMP_SESSIONS` | omp sessions root (`~/.omp/agent/sessions`) |
 
 The state directory defaults to `$XDG_STATE_HOME/reflect`, or `~/.local/state/reflect` if that isn't set, or `%LOCALAPPDATA%\reflect` on Windows.
 

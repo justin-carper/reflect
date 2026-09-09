@@ -12,6 +12,7 @@ import { DatabaseSync } from 'node:sqlite'
 import * as opencode from '../src/adapters/opencode.mjs'
 import * as claudeCode from '../src/adapters/claude-code.mjs'
 import * as pi from '../src/adapters/pi.mjs'
+import * as omp from '../src/adapters/omp.mjs'
 import { build } from '../src/corpus.mjs'
 import { signalCounts } from '../src/lexicon.mjs'
 import { dropRepeats, dropNearDuplicateSessions } from '../src/dedupe.mjs'
@@ -424,6 +425,142 @@ test('pi adapter: detect fails closed when the sessions root is absent', () => {
 test('pi adapter: describe counts top-level sessions only', () => {
   process.env.REFLECT_PI_SESSIONS = piFixture()
   const info = pi.describe()
+  assert.equal(info.present, true)
+  assert.equal(info.sessions, 1, 'the nested subagent file is not counted')
+  assert.ok(info.lastActivity)
+})
+
+// -------------------------------------------------------------------- omp
+
+function ompFixture() {
+  const root = path.join(tmp('omp'), 'sessions')
+  const dir = path.join(root, '-repo-main')
+  const iso = (s) => new Date(s).toISOString()
+  const ms = (s) => Date.parse(s)
+  const lines = [
+    // omp files begin with a fixed-width title slot; the loader folds it away.
+    { type: 'title', v: 1, title: 'Auto title', source: 'auto', updatedAt: iso('2026-01-01T00:00:00Z'), pad: ' '.repeat(200) },
+    { type: 'session', version: 3, id: 'omp1', timestamp: iso('2026-01-01T00:00:00Z'), cwd: '/repo/main' },
+    { type: 'model_change', id: 'e01', parentId: null, timestamp: iso('2026-01-01T00:00:00.5Z'), model: 'm' },
+    // human message: typed text plus an image block that must be dropped
+    {
+      type: 'message', id: 'e02', parentId: 'e01', timestamp: iso('2026-01-01T00:00:01Z'),
+      message: {
+        role: 'user', attribution: 'user', timestamp: ms('2026-01-01T00:00:01Z'),
+        content: [
+          { type: 'text', text: 'no, that is not the pattern' },
+          { type: 'image', data: 'x', mimeType: 'image/png' },
+        ],
+      },
+    },
+    // steering messages are typed mid-stream; they are human input and kept
+    {
+      type: 'message', id: 'e03', parentId: 'e02', timestamp: iso('2026-01-01T00:00:02Z'),
+      message: { role: 'user', attribution: 'user', steering: true, timestamp: ms('2026-01-01T00:00:02Z'), content: [{ type: 'text', text: 'you keep editing the generated file' }] },
+    },
+    // agent-attributed user-role text: a prompt the agent wrote, must be excluded
+    {
+      type: 'message', id: 'e04', parentId: 'e03', timestamp: iso('2026-01-01T00:00:02Z'),
+      message: { role: 'user', attribution: 'agent', timestamp: ms('2026-01-01T00:00:02Z'), content: [{ type: 'text', text: 'AGENT AUTHORED PROMPT' }] },
+    },
+    // user-role message with no attribution (future/other writer): not marked human, excluded
+    {
+      type: 'message', id: 'e05', parentId: 'e04', timestamp: iso('2026-01-01T00:00:02Z'),
+      message: { role: 'user', timestamp: ms('2026-01-01T00:00:02Z'), content: [{ type: 'text', text: 'UNATTRIBUTED TEXT' }] },
+    },
+    { type: 'message', id: 'e06', parentId: 'e05', timestamp: iso('2026-01-01T00:00:02Z'), message: { role: 'assistant', content: [{ type: 'text', text: 'ASSISTANT REPLY' }] } },
+    { type: 'message', id: 'e07', parentId: 'e06', timestamp: iso('2026-01-01T00:00:02Z'), message: { role: 'toolResult', toolCallId: 't1', toolName: 'bash', content: [{ type: 'text', text: 'TOOL RESULT' }], isError: false } },
+    { type: 'custom_message', id: 'e08', parentId: 'e07', timestamp: iso('2026-01-01T00:00:02Z'), customType: 'skill-prompt', content: 'INJECTED SKILL TEXT', display: true, attribution: 'agent' },
+    { type: 'compaction', id: 'e09', parentId: 'e08', timestamp: iso('2026-01-01T00:00:02Z'), summary: 'SUMMARY', tokensBefore: 100, retainedTail: [{ role: 'user', content: 'COMPACTION RETAINED' }] },
+    // auto title changes must not override a user-set title
+    { type: 'title_change', id: 'e10', parentId: 'e09', timestamp: iso('2026-01-01T00:00:03Z'), title: 'Auto renamed', source: 'auto' },
+    { type: 'title_change', id: 'e11', parentId: 'e10', timestamp: iso('2026-01-01T00:00:04Z'), title: 'Fix the thing', source: 'user' },
+    'not json at all',
+    'null',
+    '',
+  ]
+  write(
+    path.join(dir, '2026-01-01T00-00-00-000Z_omp1.jsonl'),
+    lines.map((l) => (typeof l === 'string' ? l : JSON.stringify(l))).join('\n'),
+  )
+
+  // Subagent sessions nest under the parent session file's basename and are
+  // agent-attributed; the walk must never read them.
+  write(
+    path.join(dir, '2026-01-01T00-00-00-000Z_omp1', 'Sub.jsonl'),
+    [
+      { type: 'session', version: 3, id: 'sub1', timestamp: iso('2026-01-01T00:00:02Z'), cwd: '/repo/main', parentSession: 'omp1' },
+      { type: 'message', id: 's01', parentId: null, timestamp: iso('2026-01-01T00:00:02Z'), message: { role: 'user', attribution: 'agent', timestamp: ms('2026-01-01T00:00:02Z'), content: [{ type: 'text', text: 'NESTED SUBAGENT PROMPT' }] } },
+    ].map((l) => JSON.stringify(l)).join('\n'),
+  )
+  return root
+}
+
+test('omp adapter: keeps only user-attributed text, user titles win, nested files skipped', () => {
+  process.env.REFLECT_OMP_SESSIONS = ompFixture()
+  assert.equal(omp.detect(), true)
+
+  const sessions = omp.load({ since: 0 })
+  assert.equal(sessions.length, 1, 'only the top-level session is returned')
+
+  const s = sessions[0]
+  assert.equal(s.id, 'omp1')
+  assert.equal(s.title, 'Fix the thing', 'the user-set title beats auto renames')
+  assert.equal(s.project, '/repo/main')
+  assert.equal(s.repo, '/repo/main')
+  assert.equal(s.messages.length, 2)
+  assert.deepEqual(
+    s.messages.map((m) => m.text),
+    ['no, that is not the pattern', 'you keep editing the generated file'],
+  )
+  assert.deepEqual(s.messages.map((m) => m.at), [Date.parse('2026-01-01T00:00:01Z'), Date.parse('2026-01-01T00:00:02Z')])
+
+  const joined = s.messages.map((m) => m.text).join('\n')
+  for (const forbidden of [
+    'AGENT AUTHORED PROMPT',
+    'UNATTRIBUTED TEXT',
+    'ASSISTANT REPLY',
+    'TOOL RESULT',
+    'INJECTED SKILL TEXT',
+    'COMPACTION RETAINED',
+    'NESTED SUBAGENT PROMPT',
+    'Auto title',
+    'Auto renamed',
+  ]) {
+    assert.ok(!joined.includes(forbidden), `must exclude: ${forbidden}`)
+  }
+})
+
+test('omp adapter: malformed lines do not throw', () => {
+  process.env.REFLECT_OMP_SESSIONS = ompFixture()
+  assert.doesNotThrow(() => omp.load({ since: 0 }))
+})
+
+test('omp adapter: since filter excludes sessions whose newest surviving message is older', () => {
+  process.env.REFLECT_OMP_SESSIONS = ompFixture()
+  assert.equal(omp.load({ since: Date.parse('2026-01-01T00:00:02.5Z') }).length, 0)
+  assert.equal(omp.load({ since: Date.parse('2026-01-01T00:00:01.5Z') }).length, 1)
+})
+
+test('omp adapter: a session is dropped when every post-watermark message is filtered', () => {
+  // e04/e05 (agent-authored / unattributed) are the only user-role messages
+  // after 00:00:01.5Z besides the kept steering message at 00:00:02Z; use a
+  // watermark between them to isolate the filtered-only case via the agent
+  // prompt session below. Here: watermark after all surviving messages.
+  process.env.REFLECT_OMP_SESSIONS = ompFixture()
+  assert.deepEqual(omp.load({ since: Date.parse('2026-01-01T00:00:04Z') }), [])
+})
+
+test('omp adapter: detect fails closed when the sessions root is absent', () => {
+  process.env.REFLECT_OMP_SESSIONS = path.join(tmp('omp-empty'), 'sessions')
+  assert.equal(omp.detect(), false)
+  assert.deepEqual(omp.load({ since: 0 }), [])
+  assert.equal(omp.describe().present, false)
+})
+
+test('omp adapter: describe counts top-level sessions only', () => {
+  process.env.REFLECT_OMP_SESSIONS = ompFixture()
+  const info = omp.describe()
   assert.equal(info.present, true)
   assert.equal(info.sessions, 1, 'the nested subagent file is not counted')
   assert.ok(info.lastActivity)

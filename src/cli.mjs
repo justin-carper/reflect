@@ -87,7 +87,7 @@ Usage:
 Options:
   --with-path PATH    corpus path to embed in the prompt (default <state-dir>/corpus.md)
   --reports-dir PATH  where the analyzer should write its report
-  --harness NAME      opencode | claude-code | pi  (default: every detected harness)
+  --harness NAME      opencode | claude-code | pi | omp  (default: every detected harness)
   --all               ignore the incremental watermark, use full history
   --min-signal N      corrective messages required per session (default 2)
   --out PATH          corpus destination (default <state-dir>/corpus.md)
@@ -99,6 +99,7 @@ Environment:
   REFLECT_OPENCODE_DB           override opencode session database path
   REFLECT_CLAUDE_PROJECTS      override Claude Code projects root
   REFLECT_PI_SESSIONS           override pi sessions root
+  REFLECT_OMP_SESSIONS          override omp sessions root
 `
 
 function doctor() {

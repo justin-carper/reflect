@@ -19,6 +19,7 @@ BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 OC_DIR="$HOME/.config/opencode"
 CC_DIR="$HOME/.claude"
 PI_DIR="$HOME/.pi/agent"
+OMP_DIR="$HOME/.omp/agent"
 
 # Same default the CLI uses, so the manifest sits beside your corpus and state.
 STATE_DIR="${REFLECT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/reflect}"
@@ -54,7 +55,7 @@ Usage: ./install.sh [options]
 Options:
   --update           git pull --ff-only in this clone, then re-sync files
   --force            overwrite integration files you have modified locally
-  --harness NAME     limit to one harness: opencode | claude-code | pi
+  --harness NAME     limit to one harness: opencode | claude-code | pi | omp
   --with-nudge       also install the optional opencode nudge plugin
   --dry-run          print every action without changing anything
   --uninstall        remove the symlink and any unmodified installed file
@@ -75,7 +76,7 @@ while [ $# -gt 0 ]; do
     --with-nudge) WITH_NUDGE=1 ;;
     --harness)
       shift
-      [ $# -gt 0 ] || die "--harness needs a value: opencode | claude-code | pi"
+      [ $# -gt 0 ] || die "--harness needs a value: opencode | claude-code | pi | omp"
       ONLY_HARNESS="$1"
       ;;
     -h | --help)
@@ -88,8 +89,8 @@ while [ $# -gt 0 ]; do
 done
 
 case "$ONLY_HARNESS" in
-  "" | opencode | claude-code | pi) ;;
-  *) die "unknown harness \"$ONLY_HARNESS\" (expected opencode, claude-code, or pi)" ;;
+  "" | opencode | claude-code | pi | omp) ;;
+  *) die "unknown harness \"$ONLY_HARNESS\" (expected opencode, claude-code, pi, or omp)" ;;
 esac
 
 # ---------------------------------------------------------------- preflight
@@ -115,6 +116,7 @@ managed_files() {
   fi
   echo "claude-code|$ROOT/integrations/claude-code/commands/reflect.md|$CC_DIR/commands/reflect.md"
   echo "pi|$ROOT/integrations/pi/prompts/reflect.md|$PI_DIR/prompts/reflect.md"
+  echo "omp|$ROOT/integrations/omp/commands/reflect.md|$OMP_DIR/commands/reflect.md"
 }
 
 harness_present() {
@@ -122,6 +124,7 @@ harness_present() {
     opencode) [ -d "$OC_DIR" ] ;;
     claude-code) [ -d "$CC_DIR" ] ;;
     pi) [ -d "$PI_DIR" ] ;;
+    omp) [ -d "$OMP_DIR" ] ;;
     *) return 1 ;;
   esac
 }
@@ -332,7 +335,7 @@ fi
 # ------------------------------------------------------------- integrations
 
 any_harness=0
-for h in opencode claude-code pi; do
+for h in opencode claude-code pi omp; do
   harness_wanted "$h" || continue
   harness_present "$h" || continue
   any_harness=1
@@ -351,7 +354,7 @@ done
 if [ "$any_harness" -eq 0 ]; then
   echo ""
   echo "No supported harness found on this machine."
-  echo "Looked for $(tilde "$OC_DIR"), $(tilde "$CC_DIR"), and $(tilde "$PI_DIR")."
+  echo "Looked for $(tilde "$OC_DIR"), $(tilde "$CC_DIR"), $(tilde "$PI_DIR"), and $(tilde "$OMP_DIR")."
   echo "The CLI still works: reflect doctor"
 fi
 
