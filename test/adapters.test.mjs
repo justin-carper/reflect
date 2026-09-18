@@ -543,12 +543,13 @@ test('omp adapter: since filter excludes sessions whose newest surviving message
 })
 
 test('omp adapter: a session is dropped when every post-watermark message is filtered', () => {
-  // e04/e05 (agent-authored / unattributed) are the only user-role messages
-  // after 00:00:01.5Z besides the kept steering message at 00:00:02Z; use a
-  // watermark between them to isolate the filtered-only case via the agent
-  // prompt session below. Here: watermark after all surviving messages.
+  // Watermark after the last surviving message (:02) but before the last
+  // filtered entries (:03/:04 title_change records). The file holds
+  // post-watermark entries; all of them are filtered out, so the session
+  // must not be pulled in. Exercises the re-check against surviving messages
+  // in omp.mjs load().
   process.env.REFLECT_OMP_SESSIONS = ompFixture()
-  assert.deepEqual(omp.load({ since: Date.parse('2026-01-01T00:00:04Z') }), [])
+  assert.deepEqual(omp.load({ since: Date.parse('2026-01-01T00:00:02.5Z') }), [])
 })
 
 test('omp adapter: detect fails closed when the sessions root is absent', () => {
