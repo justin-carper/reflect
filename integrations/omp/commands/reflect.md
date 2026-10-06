@@ -34,15 +34,30 @@ Pass `--all` for full history instead of only sessions since the last pass.
    analyzer should judge the transcripts, not your current session. If not, analyze
    in this session.
 
-6. Read the report the analysis wrote, then triage with me **one finding at a time**,
-   section A first. An ignored rule is worth more than a new one. For each: evidence,
+6. Read the report the analysis wrote, then triage with me **one finding at a time**:
+   A, then F, then G, then B, C, D. An ignored rule is worth more than a new one, and
+   a rule that fires at the right moment is worth more than prose. For each: evidence,
    proposed change, then accept / reject / modify.
 
-7. Apply only what I accept. Universal rules go in the canonical rules file — if a
-   harness file imports `AGENTS.md`, edit `AGENTS.md`, not the bridge. Project
-   conventions go in that repo's `AGENTS.md`.
+7. Apply only what I accept:
+   - **A–C:** universal rules go in the canonical rules file — if a harness file
+     imports `AGENTS.md`, edit `AGENTS.md`, not the bridge. Project conventions go in
+     that repo's `AGENTS.md`.
+   - **F:** write the draft to `~/.agents/rules/<name>.md`, then prove the trigger with
+     `omp ttsr test --rule ~/.agents/rules/<name>.md --source <tool|text> [--tool <tool>] [--path <file>] '<must-match sample>'`
+     using the source, tool, and path the finding gives, and the same command with the
+     must-not-match sample. Show both results.
+   - **G:** author the skill with the `writing-skills` skill into
+     `~/.agents/skills/<name>/SKILL.md`, or update the existing skill the finding names.
 
-8. When triage is done, stamp the watermark:
+8. Review live-captured skills. List `~/.omp/agent/managed-skills/*/SKILL.md` changed
+   since `lastReflectedAt` in `~/.local/state/reflect/state.json` (epoch ms). For each,
+   show its description and body, then ask: promote / keep / delete.
+   - **promote:** move the directory to `~/.agents/skills/<name>/`. If that name
+     already exists there, stop and ask — never overwrite an authored skill.
+   - **delete:** remove the managed directory.
+
+9. When triage is done, stamp the watermark:
 
    ```
    reflect mark-reflected
@@ -52,4 +67,4 @@ Pass `--all` for full history instead of only sessions since the last pass.
 
 - Apply nothing without explicit approval.
 - Do not commit. Name the command and stop.
-- Record rejected findings in the report so the next pass does not re-propose them.
+- Record rejected findings in the report under `## Triage outcome` so the next pass does not re-propose them.

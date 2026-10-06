@@ -19,6 +19,12 @@ The corpus opens with a project-distribution header. Read it first and take it s
 
 If you cannot find any rules file, say so and treat every finding as new.
 
+Also read, when they exist:
+
+- **Pattern-triggered rules** — omp TTSR rules in `~/.agents/rules/`, `~/.omp/agent/rules/`, and project `.omp/rules/`. A file with a `condition:` (regex) frontmatter key is one. Note their names and triggers so section F never duplicates one.
+- **Installed skills** — the `name` and `description` frontmatter of each `~/.agents/skills/*/SKILL.md`, so section G proposes an update to an existing skill instead of a near-duplicate.
+- **Prior reports** in `{{REPORTS_DIR}}` — their `## Triage outcome` sections list findings the user already rejected. Never re-propose a rejected finding unless new evidence postdates the rejection; say so if you do.
+
 Read the corpus in full. Page through it with offset and limit if it exceeds one read.
 
 ## Method
@@ -29,6 +35,8 @@ Classify each piece of evidence:
 - **Enforcement gap** — the user restated something already written in a rules file. This is the highest-value finding: the rule exists and failed to bind. Say *why* it failed — too abstract, buried, wrong scope, no named verifier, no described failure mode, no moment at which it is checked.
 - **Durable process preference** — a statement about how work should be done that would apply to unrelated future tasks.
 - **Project convention** — durable but scoped to one repo.
+- **Mechanical restatement** — a correction naming a concrete, pattern-matchable action: a command, a flag, a file path, a literal string ("don't run `git push --force`", "stop editing `*.gen.ts`"). A pattern match can catch it at the moment it happens, so it routes to section F. A correction that needs judgment to apply ("keep it simpler") routes to A or B as before.
+- **Repeated procedure** — the user walks the agent through the same multi-step procedure in different sessions, or refers to one by name ("do the sync thing", "like last time", "same steps as before"). A procedure the user has to re-explain is a skill that does not exist yet; it routes to section G.
 
 Exact wording will never repeat. You are looking for repeated *intent* under different phrasings, which is the only reason a model is doing this instead of a script. Read sequences, not just individual messages — two adjacent messages often reveal a durable failure that neither shows alone.
 
@@ -58,19 +66,48 @@ Durable but repo-scoped. Include the repo path. 2+ sessions required.
 
 One line each with session IDs. No proposed rules.
 
+### F. Pattern-triggered rule candidates
+
+Mechanical restatements with evidence in 3+ distinct sessions. At most 3 per report; keep the strongest. For each: session IDs, message numbers, verbatim quotes, distinct-repo count, and a paste-ready draft.
+
+If the setup has omp TTSR rules, draft a complete rule file:
+
+```markdown
+---
+condition: '<regex matching the action at the moment it happens>'
+scope: <tool:bash | tool:edit(<glob>) | text>
+agents: [<main, implementer, ...>]
+interruptMode: never
+---
+Don't X. Instead Y. Because Z.
+```
+
+Give the filename (`<name>.md`), two sample strings (one the regex must match, one it must not), and how to test them: the source (`tool` or `text`), the tool name for tool scopes, and a file path matching the glob for `tool:edit(...)`/`tool:write(...)` scopes. If the setup has no TTSR rules, propose the equivalent hook or check (pre-commit hook, linter rule, harness hook) instead of omp frontmatter.
+
+### G. Skill candidates
+
+Repeated procedures with evidence in 2+ distinct sessions. At most 2 per report. For each: session IDs, message numbers, verbatim quotes, distinct-repo count, then:
+
+- **Create or update** — name the installed skill it overlaps with, if any. Prefer updating it.
+- **name** — lowercase, hyphenated.
+- **description** — one line saying when to use it, written in the words the user used to ask.
+- **Body outline** — the steps as the user explained them, and the completion check that proves the procedure ran.
+
 ### E. Verdict
 
 1. How many A and B findings would a reasonable engineer act on?
-2. Did reading whole sessions reveal patterns that exact-phrase matching could not? Give a specific example.
-3. Is there enough signal to justify reflecting again soon, or should the next pass wait?
-4. What fraction of the corpus was task-specific noise?
+2. How many F and G candidates would a reasonable engineer adopt?
+3. Did reading whole sessions reveal patterns that exact-phrase matching could not? Give a specific example.
+4. Is there enough signal to justify reflecting again soon, or should the next pass wait?
+5. What fraction of the corpus was task-specific noise?
 
-If A and B are empty or near-empty, say so plainly and recommend against further rule changes. That is an acceptable and useful outcome.
+If A, B, F, and G are empty or near-empty, say so plainly and recommend against further changes. That is an acceptable and useful outcome.
 
 ## Constraints
 
 - Quote verbatim. Never paraphrase evidence.
 - Do not restate an existing rule as a new one. If a rule exists and was ignored, it belongs in section A.
-- Under-reporting is correct. If you cannot find 3 sessions for a pattern, do not promote it.
+- Under-reporting is correct. If you cannot find 3 sessions for a pattern (2 for a skill candidate), do not promote it.
 - Do not propose a rule whose evidence comes from a single repo unless you mark it clearly as repo-scoped.
-- Do not edit rules files, code, or config. Report only. Applying findings is a separate, human-approved step.
+- Never copy a secret-shaped string (token, key, password, `KEY=value` credential) into a quote or draft. Write `<redacted>` in its place.
+- Do not edit rules files, skills, code, or config. Report only. Applying findings is a separate, human-approved step.
