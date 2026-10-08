@@ -113,6 +113,7 @@ managed_files() {
   echo "opencode|$ROOT/integrations/opencode/agent/reflector.md|$OC_DIR/agent/reflector.md"
   if [ "$WITH_NUDGE" -eq 1 ] || [ "$UNINSTALL" -eq 1 ]; then
     echo "opencode|$ROOT/integrations/opencode/plugins/reflect-nudge.ts|$OC_DIR/plugins/reflect-nudge.ts"
+    echo "opencode|$ROOT/integrations/opencode/plugins/reflect-nudge-tui/tui.ts|$OC_DIR/plugins/reflect-nudge-tui/tui.ts"
   fi
   echo "claude-code|$ROOT/integrations/claude-code/commands/reflect.md|$CC_DIR/commands/reflect.md"
   echo "pi|$ROOT/integrations/pi/prompts/reflect.md|$PI_DIR/prompts/reflect.md"

@@ -1,4 +1,5 @@
 import type { Plugin } from '@opencode-ai/plugin'
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -56,18 +57,54 @@ const writeState = (patch: State) => {
   }
 }
 
-export const ReflectNudgePlugin: Plugin = async ({ client, $ }) => {
-  // Prefer `reflect` on PATH; fall back to a checkout pointed at by REFLECT_HOME.
-  let runner: string[] | null = null
-  try {
-    await $`which reflect`.quiet()
-    runner = ['reflect']
-  } catch {
-    const home = process.env.REFLECT_HOME
-    const cli = home ? path.join(home, 'src/cli.mjs') : null
-    if (cli && fs.existsSync(cli)) runner = ['node', cli]
-  }
+// Prefer `reflect` on PATH; fall back to a checkout pointed at by REFLECT_HOME.
+const findRunner = async (): Promise<string[] | null> => {
+  const onPath = await new Promise<boolean>((resolve) => execFile('reflect', ['--help'], (err) => resolve(!err)))
+  if (onPath) return ['reflect']
+  const home = process.env.REFLECT_HOME
+  const cli = home ? path.join(home, 'src/cli.mjs') : null
+  return cli && fs.existsSync(cli) ? ['node', cli] : null
+}
 
+// Shared by both opencode generations: throttle, cooldown, count, then toast.
+// Never throws.
+const nudgeIfDue = async (runner: string[], eventType: string, toast: (message: string) => unknown) => {
+  try {
+    const state = readState()
+    const now = Date.now()
+
+    if (state.lastCheckAt && now - state.lastCheckAt < CHECK_INTERVAL_MS) return
+    writeState({ lastCheckAt: now })
+    trace(`event: ${eventType} — running check`)
+
+    if (state.lastNudgeAt && now - state.lastNudgeAt < COOLDOWN_MS) {
+      trace(`skip: cooldown, last nudge ${Math.round((now - state.lastNudgeAt) / 1000)}s ago`)
+      return
+    }
+
+    const [cmd, ...args] = runner
+    const raw = await new Promise<string>((resolve) =>
+      execFile(cmd, [...args, 'count', '--harness', 'opencode'], (_err, stdout) => resolve(String(stdout ?? '').trim())),
+    )
+    const count = parseInt(raw, 10)
+    trace(`count: raw="${raw}" parsed=${count} threshold=${THRESHOLD}`)
+    if (!Number.isFinite(count) || count < THRESHOLD) {
+      trace('skip: under threshold or unparseable')
+      return
+    }
+
+    await toast(`${count} sessions with corrective feedback since your last pass. Run /reflect.`)
+    trace('toast: shown')
+
+    writeState({ lastNudgeAt: now })
+    trace('state: lastNudgeAt written')
+  } catch (e) {
+    trace(`error: ${(e as Error)?.message ?? String(e)}`)
+  }
+}
+
+const ReflectNudgePlugin: Plugin = async ({ client }) => {
+  const runner = await findRunner()
   if (!runner) {
     trace('init: reflect not found on PATH and REFLECT_HOME unset — plugin inert')
     return {}
@@ -76,58 +113,56 @@ export const ReflectNudgePlugin: Plugin = async ({ client, $ }) => {
 
   return {
     event: async ({ event }) => {
-      try {
-        // session.created alone is not enough: resuming a session — the common
-        // case — never fires it. session.idle fires in any session actually in
-        // use, which is what makes the reminder reachable at all.
-        if (event.type !== 'session.created' && event.type !== 'session.idle') return
+      // session.created alone is not enough: resuming a session — the common
+      // case — never fires it. session.idle fires in any session actually in
+      // use, which is what makes the reminder reachable at all.
+      if (event.type !== 'session.created' && event.type !== 'session.idle') return
 
-        // Only session.created carries session info. Subagent sessions firing
-        // idle is harmless: the counter only counts top-level sessions.
-        if (event.type === 'session.created') {
-          const info = (event as { properties?: { info?: { parentID?: string } } }).properties?.info
-          if (info?.parentID) {
-            trace('skip: subagent session')
-            return
-          }
-        }
-
-        const state = readState()
-        const now = Date.now()
-
-        if (state.lastCheckAt && now - state.lastCheckAt < CHECK_INTERVAL_MS) return
-        writeState({ lastCheckAt: now })
-        trace(`event: ${event.type} — running check`)
-
-        if (state.lastNudgeAt && now - state.lastNudgeAt < COOLDOWN_MS) {
-          trace(`skip: cooldown, last nudge ${Math.round((now - state.lastNudgeAt) / 1000)}s ago`)
+      // Only session.created carries session info. Subagent sessions firing
+      // idle is harmless: the counter only counts top-level sessions.
+      if (event.type === 'session.created') {
+        const props = 'properties' in event ? event.properties : undefined
+        const info = props && typeof props === 'object' && 'info' in props ? props.info : undefined
+        if (info && typeof info === 'object' && 'parentID' in info && info.parentID) {
+          trace('skip: subagent session')
           return
         }
-
-        const result = await $`${runner} count --harness opencode`.quiet().nothrow()
-        const raw = String(result.stdout).trim()
-        const count = parseInt(raw, 10)
-        trace(`count: raw="${raw}" parsed=${count} threshold=${THRESHOLD}`)
-        if (!Number.isFinite(count) || count < THRESHOLD) {
-          trace('skip: under threshold or unparseable')
-          return
-        }
-
-        await client.tui.showToast({
-          body: {
-            title: 'Reflection available',
-            message: `${count} sessions with corrective feedback since your last pass. Run /reflect.`,
-            variant: 'info',
-            duration: 8000,
-          },
-        })
-        trace('toast: shown')
-
-        writeState({ lastNudgeAt: now })
-        trace('state: lastNudgeAt written')
-      } catch (e) {
-        trace(`error: ${(e as Error)?.message ?? String(e)}`)
       }
+
+      await nudgeIfDue(runner, event.type, (message) =>
+        client.tui.showToast({ body: { title: 'Reflection available', message, variant: 'info', duration: 8000 } }),
+      )
     },
   }
+}
+
+// The subset of the opencode 2 CLI plugin context this plugin uses.
+type CliContext = {
+  ui?: { toast: { show(input: { title?: string; message: string; variant?: string; duration?: number }): void } }
+  data: { on(type: string, callback: () => void): () => void }
+}
+
+// opencode 1 calls `server`. opencode 2 calls `setup` twice: on the server
+// (this file, discovered in plugins/) and in the CLI (via
+// plugins/reflect-nudge-tui/tui.ts). Only the CLI context has `ui`, so the
+// server instance stays inert and the toast comes from the CLI.
+export default {
+  id: 'reflect-nudge',
+  server: ReflectNudgePlugin,
+  async setup(ctx: CliContext) {
+    if (!ctx.ui) return
+    const runner = await findRunner()
+    if (!runner) {
+      trace('init: reflect not found on PATH and REFLECT_HOME unset — plugin inert')
+      return
+    }
+    trace(`init: loaded (runner: ${runner.join(' ')}, opencode 2)`)
+    const ui = ctx.ui
+    // opencode 2 has no session.idle; a finished agent turn is the equivalent.
+    return ctx.data.on('session.execution.succeeded', () => {
+      void nudgeIfDue(runner, 'session.execution.succeeded', (message) =>
+        ui.toast.show({ title: 'Reflection available', message, variant: 'info', duration: 8000 }),
+      )
+    })
+  },
 }

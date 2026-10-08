@@ -31,9 +31,12 @@ Runs the analysis in a fresh context with write access scoped to the report dire
 ## 3. The nudge plugin (optional)
 
 ```sh
-mkdir -p ~/.config/opencode/plugins
+mkdir -p ~/.config/opencode/plugins/reflect-nudge-tui
 cp integrations/opencode/plugins/reflect-nudge.ts ~/.config/opencode/plugins/
+cp integrations/opencode/plugins/reflect-nudge-tui/tui.ts ~/.config/opencode/plugins/reflect-nudge-tui/
 ```
+
+The plugin works with opencode 1 and 2. opencode 2 only shows toasts from a terminal (CLI) plugin, which it loads from `plugins/<name>/tui.ts`, so `reflect-nudge-tui/tui.ts` re-exports the same plugin for that entrypoint. opencode 1 ignores that file.
 
 Shows one toast when 20+ qualifying sessions have accumulated. Requires `@opencode-ai/plugin` in a `package.json` in your opencode config directory:
 
@@ -54,6 +57,8 @@ If it finds neither it logs that fact and does nothing. It never throws — a th
 `session.created` looks like the obvious trigger and is the wrong one. Resuming a session never fires it, and resuming is the common case — two consecutive opencode restarts produced zero `session.created` events because both resumed. `session.idle` fires in any session actually in use.
 
 Because idle fires often, a `lastCheckAt` watermark bounds how often the counting command runs (30 minutes by default), separately from the 24-hour nudge cooldown.
+
+opencode 2 has no `session.idle` event. There the plugin listens to `session.execution.succeeded`, which fires when an agent turn finishes, under the same watermark.
 
 ### Debugging it
 
