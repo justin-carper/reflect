@@ -58,7 +58,7 @@ If it finds neither it logs that fact and does nothing. It never throws — a th
 
 Because idle fires often, a `lastCheckAt` watermark bounds how often the counting command runs (30 minutes by default), separately from the 24-hour nudge cooldown.
 
-opencode 2 has no `session.idle` event. There the plugin listens to `session.execution.succeeded`, which fires when an agent turn finishes, under the same watermark.
+On opencode 2 the toast has to come from the CLI side, and the CLI does not receive `session.idle` (it stays on the server event stream, deprecated). There the plugin listens to `session.execution.succeeded`, `session.execution.failed`, and `session.execution.interrupted` (together, every way an agent turn ends) under the same watermark.
 
 ### Debugging it
 
