@@ -44,6 +44,7 @@ const paths = (home) => ({
   ocCommand: path.join(home, '.config/opencode/commands/reflect.md'),
   ocAgent: path.join(home, '.config/opencode/agent/reflector.md'),
   ocPlugin: path.join(home, '.config/opencode/plugins/reflect-nudge.ts'),
+  ocPluginTui: path.join(home, '.config/opencode/plugins/reflect-nudge-tui/tui.ts'),
   ccCommand: path.join(home, '.claude/commands/reflect.md'),
   piPrompt: path.join(home, '.pi/agent/prompts/reflect.md'),
   ompCommand: path.join(home, '.omp/agent/commands/reflect.md'),
@@ -64,6 +65,7 @@ test('install: links the CLI and installs files for detected harnesses', () => {
 
   // The nudge plugin is opt-in; a plain install must not write it.
   assert.equal(fs.existsSync(p.ocPlugin), false)
+  assert.equal(fs.existsSync(p.ocPluginTui), false)
 
   assert.match(out, /installed/)
   assert.match(out, /Next: reflect doctor/)
@@ -158,6 +160,8 @@ test('install: --with-nudge adds the plugin file and skips a satisfied dependenc
   const out = run(home, ['--with-nudge'])
 
   assert.equal(fs.existsSync(paths(home).ocPlugin), true)
+  // opencode 2 only toasts from a CLI entrypoint at plugins/<name>/tui.ts.
+  assert.equal(fs.existsSync(paths(home).ocPluginTui), true)
   assert.match(out, /already resolvable/)
   assert.doesNotMatch(out, /installing {6}@opencode-ai/)
 })
@@ -205,6 +209,7 @@ test('uninstall: removes what it installed and keeps what you changed', () => {
   assert.equal(fs.existsSync(p.ccCommand), false)
   assert.equal(fs.existsSync(p.piPrompt), false)
   assert.equal(fs.existsSync(p.ocPlugin), false)
+  assert.equal(fs.existsSync(p.ocPluginTui), false)
   assert.equal(fs.readFileSync(p.ocAgent, 'utf8'), '# edited\n', 'an edited file must survive uninstall')
   assert.match(out, /kept/)
   assert.match(out, /state directory was left alone/)
