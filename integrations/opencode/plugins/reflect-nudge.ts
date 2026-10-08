@@ -158,11 +158,16 @@ export default {
     }
     trace(`init: loaded (runner: ${runner.join(' ')}, opencode 2)`)
     const ui = ctx.ui
-    // opencode 2 has no session.idle; a finished agent turn is the equivalent.
-    return ctx.data.on('session.execution.succeeded', () => {
-      void nudgeIfDue(runner, 'session.execution.succeeded', (message) =>
-        ui.toast.show({ title: 'Reflection available', message, variant: 'info', duration: 8000 }),
-      )
-    })
+    // The v2 CLI does not receive session.idle; these three events mark every
+    // way an agent turn ends, which is when v1 fires idle.
+    const stops = ['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted'].map(
+      (type) =>
+        ctx.data.on(type, () => {
+          void nudgeIfDue(runner, type, (message) =>
+            ui.toast.show({ title: 'Reflection available', message, variant: 'info', duration: 8000 }),
+          )
+        }),
+    )
+    return () => stops.forEach((stop) => stop())
   },
 }
