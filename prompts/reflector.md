@@ -56,7 +56,7 @@ Existing rules the user had to restate. For each: quote the existing rule and na
 
 ### B. New durable rules
 
-Only patterns with evidence in 3+ distinct sessions. Phrase each as "Don't X. Instead Y. Because Z." Cite session IDs and verbatim quotes. Note how many distinct repos support it. Fewer than 3 sessions goes in section D.
+Only patterns with evidence in 3+ distinct sessions. Cite session IDs and verbatim quotes, and note how many distinct repos support it, in the finding. Fewer than 3 sessions goes in section D. Then give the paste-ready rule text, written per "Rule text" below. Before proposing a new rule, check whether an existing rule could be reworded or merged to cover it; prefer that, and say which.
 
 ### C. Project conventions
 
@@ -79,7 +79,7 @@ scope: <tool:bash | tool:edit(<glob>) | text>
 agents: [<main, implementer, ...>]
 interruptMode: never
 ---
-Don't X. Instead Y. Because Z.
+Do Y.
 ```
 
 Give the filename (`<name>.md`), two sample strings (one the regex must match, one it must not), and how to test them: the source (`tool` or `text`), the tool name for tool scopes, and a file path matching the glob for `tool:edit(...)`/`tool:write(...)` scopes. If the setup has no TTSR rules, propose the equivalent hook or check (pre-commit hook, linter rule, harness hook) instead of omp frontmatter.
@@ -102,6 +102,12 @@ Repeated procedures with evidence in 2+ distinct sessions. At most 2 per report.
 5. What fraction of the corpus was task-specific noise?
 
 If A, B, F, and G are empty or near-empty, say so plainly and recommend against further changes. That is an acceptable and useful outcome.
+
+## Rule text
+
+Every paste-ready rule (B, C, F) is one imperative line: "Do Y." Add a short reason only when the rule is wrong or puzzling without it. Session IDs, quotes, counts, and "the user said this in N sessions" stay in the report, never in the rule: rules files load into every session, and each extra word costs attention on every task.
+
+State the current word count of each rules file you would add to, and the count after your proposals. If the total always-loaded rules would exceed 3,000 words, say so and name rules that could be cut or merged to make room.
 
 ## Constraints
 
