@@ -51,6 +51,9 @@ test('proposed rules stay one line and respect the word budget', () => {
   assert.match(rules, /wc -w/)
   assert.match(rules, /3,000 words/)
   assert.doesNotMatch(prompt, /Because Z/, 'the old template put evidence prose into every rule')
+  const b = section(prompt, '### B.', '### C.')
+  assert.match(b, /reworded or merged/)
+  assert.match(b, /per "Rule text"/)
 })
 
 test('omp command triages F and G and reviews managed skills', () => {
