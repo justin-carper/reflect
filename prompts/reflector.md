@@ -60,7 +60,7 @@ Only patterns with evidence in 3+ distinct sessions. Cite session IDs and verbat
 
 ### C. Project conventions
 
-Durable but repo-scoped. Include the repo path. 2+ sessions required.
+Durable but repo-scoped. Include the repo path. 2+ sessions required. Give the paste-ready rule text per "Rule text" below.
 
 ### D. Weak signals
 
@@ -79,7 +79,7 @@ scope: <tool:bash | tool:edit(<glob>) | text>
 agents: [<main, implementer, ...>]
 interruptMode: never
 ---
-Do Y.
+Do Y, not X.
 ```
 
 Give the filename (`<name>.md`), two sample strings (one the regex must match, one it must not), and how to test them: the source (`tool` or `text`), the tool name for tool scopes, and a file path matching the glob for `tool:edit(...)`/`tool:write(...)` scopes. If the setup has no TTSR rules, propose the equivalent hook or check (pre-commit hook, linter rule, harness hook) instead of omp frontmatter.
@@ -105,9 +105,9 @@ If A, B, F, and G are empty or near-empty, say so plainly and recommend against 
 
 ## Rule text
 
-Every paste-ready rule (B, C, F) is one imperative line: "Do Y." Add a short reason only when the rule is wrong or puzzling without it. Session IDs, quotes, counts, and "the user said this in N sessions" stay in the report, never in the rule: rules files load into every session, and each extra word costs attention on every task.
+Every paste-ready rule (B, C, F) is one imperative line: "Do Y." or, when it names a concrete action to avoid, "Do Y, not X." Add a short reason only when the rule is wrong or puzzling without it. Session IDs, quotes, counts, and "the user said this in N sessions" stay in the report, never in the rule: rules files load into every session, and each extra word costs attention on every task.
 
-State the current word count of each rules file you would add to, and the count after your proposals. If the total always-loaded rules would exceed 3,000 words, say so and name rules that could be cut or merged to make room.
+Always-loaded rules are the files that load into every session: user-level and repo-root `AGENTS.md`/`CLAUDE.md` and harness rules files without a trigger. Skills and pattern-triggered rules don't count. Measure each with `wc -w` and state the count before and after your proposals. If the total would exceed 3,000 words, say so and name rules that could be cut or merged to make room.
 
 ## Constraints
 
